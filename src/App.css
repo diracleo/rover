@@ -1,0 +1,14 @@
+#left {
+  position:absolute;
+  left:0px;
+  top:0px;
+  width:50%;
+  height:100%;
+}
+#right {
+  position:absolute;
+  right:0px;
+  top:0px;
+  width:50%;
+  height:100%;
+}

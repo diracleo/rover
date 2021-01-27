@@ -7,12 +7,15 @@ from imutils.video import VideoStream
 from flask import Response
 from flask import Flask
 from flask import render_template
+from flask import request
 import threading
 import argparse
 import datetime
 import imutils
 import time
 import cv2
+import serial
+import math
 
 # initialize the output frame and a lock used to ensure thread-safe
 # exchanges of the output frames (useful for multiple browsers/tabs
@@ -21,7 +24,7 @@ outputFrame = None
 lock = threading.Lock()
 
 # initialize a flask object
-app = Flask(__name__)
+app = Flask(__name__, static_folder="./build/static", template_folder="./build")
 
 # initialize the video stream and allow the camera sensor to
 # warmup
@@ -29,10 +32,34 @@ app = Flask(__name__)
 vs = VideoStream(src=0).start()
 time.sleep(2.0)
 
+ser = serial.Serial(
+    port='/dev/ttyACM2',
+    baudrate=9600,
+)
+
+ser.isOpen()
+
 @app.route("/")
 def index():
 	# return the rendered template
 	return render_template("index.html")
+
+def feed(frameCount):
+	# grab global references to the video stream, output frame, and
+	# lock variables
+	global vs, outputFrame, lock
+
+	# loop over frames from the video stream
+	while True:
+		# read the next frame from the video stream, resize it,
+		# convert the frame to grayscale, and blur it
+		frame = vs.read()
+		frame = imutils.resize(frame, width=400)
+
+		# acquire the lock, set the output frame, and release the
+		# lock
+		with lock:
+			outputFrame = frame.copy()
 
 def detect_motion(frameCount):
 	# grab global references to the video stream, output frame, and
@@ -114,6 +141,19 @@ def video_feed():
 	# type (mime type)
 	return Response(generate(),
 		mimetype = "multipart/x-mixed-replace; boundary=frame")
+		
+@app.route("/command/")
+def command():
+	cmd = ''
+	left = request.args.get("left")
+	right = request.args.get("right")
+	ret = {}
+	ret['left'] = left
+	cmd += str(left) + 'L'
+	ret['right'] = right
+	cmd += str(right) + 'R'
+	ser.write(cmd.encode())
+	return ret
 
 # check to see if this is the main thread of execution
 if __name__ == '__main__':
@@ -128,13 +168,13 @@ if __name__ == '__main__':
 	args = vars(ap.parse_args())
 
 	# start a thread that will perform motion detection
-	t = threading.Thread(target=detect_motion, args=(
+	t = threading.Thread(target=feed, args=(
 		args["frame_count"],))
 	t.daemon = True
 	t.start()
 
 	# start the flask app
-	app.run(host=args["ip"], port=args["port"], debug=True,
+	app.run(host=args["ip"], port=args["port"], debug=False,
 		threaded=True, use_reloader=False)
 
 # release the video stream pointer
