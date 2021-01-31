@@ -1,11 +1,28 @@
-#left {
+.App {
+  display:flex;
+  flex-direction:column;
+  height:100%;
+}
+.App #menu {
+  height:30px;
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  justify-content:center;
+  background-color:#333;
+}
+.App #controls {
+  flex:1;
+  position:relative;
+}
+.App #controls #left {
   position:absolute;
   left:0px;
   top:0px;
   width:50%;
   height:100%;
 }
-#right {
+.App #controls #right {
   position:absolute;
   right:0px;
   top:0px;

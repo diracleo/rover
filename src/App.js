@@ -1,22 +1,31 @@
 import React, {useEffect, useRef, useState} from 'react';
+import { isResponseOk } from './utils.js';
 import logo from './logo.svg';
 import './App.css';
 import nipplejs from 'nipplejs';
+//import 'bootstrap/dist/css/bootstrap.min.css';
+import '@forevolve/bootstrap-dark/dist/css/bootstrap-dark.min.css'
+import Button from 'react-bootstrap/Button';
+import Form from 'react-bootstrap/Form';
 
+const maxForce = 2.5;
+const maxInput = 255;
+const inputPrecision = 51;
+  
 function App() {
-  const maxForce = 2.5;
-  const maxInput = 255;
   const left = useRef(null);
   const right = useRef(null);
-  let leftData = 0;
-  let rightData = 0;
-  let leftForce = 0;
-  let rightForce = 0;
-  let leftDir = 1;
-  let rightDir = 1;
-  let prevLeftData = null;
-  let prevRightData = null;
-  let commandTimer = null;
+  const leftData = useRef(0);
+  const rightData = useRef(0);
+  const leftDir = useRef(1);
+  const rightDir = useRef(1);
+  const prevLeftData = useRef(0);
+  const prevRightData = useRef(0);
+  const commandTimer = useRef(null);
+  const managerLeft = useRef(null);
+  const managerRight = useRef(null);
+  
+  const [ai, setAi] = useState(false);
   
   function convertToInput(value, dir) {
     value = Math.round(value / maxForce * maxInput);
@@ -24,6 +33,7 @@ function App() {
 	  value = maxInput;
 	}
 	value *= dir;
+	value = Math.ceil(value / inputPrecision) * inputPrecision;
 	return value;
   }
   
@@ -33,53 +43,77 @@ function App() {
       lockY: true,
       shape: "square",
     };
-    const managerLeft = nipplejs.create(optionsLeft);
+    managerLeft.current = nipplejs.create(optionsLeft);
     const optionsRight = {
       zone: right.current,
       lockY: true,
       shape: "square",
     };
-    const managerRight = nipplejs.create(optionsRight);
+    managerRight.current = nipplejs.create(optionsRight);
     
-    managerLeft.on('start end', (evt, data) => {
-      leftData = 0;
+    managerLeft.current.on('start end', (evt, data) => {
+      leftData.current = 0;
+      setAi(false);
     }).on('move', (evt, data) => {
-	  leftData = convertToInput(data.force, leftDir);
+	  leftData.current = convertToInput(data.force, leftDir.current);
     }).on('dir:up', (evt, data) => {
-      leftDir = 1;
+      leftDir.current = 1;
     }).on('dir:down', (evt, data) => {
-      leftDir = -1;
+      leftDir.current = -1;
     });
     
-    managerRight.on('start end', (evt, data) => {
-      rightData = 0;
+    managerRight.current.on('start end', (evt, data) => {
+      rightData.current = 0;
+      setAi(false);
     }).on('move', (evt, data) => {
-      rightData = convertToInput(data.force, rightDir);
+      rightData.current = convertToInput(data.force, rightDir.current);
     }).on('dir:up', (evt, data) => {
-      rightDir = 1;
+      rightDir.current = 1;
     }).on('dir:down', (evt, data) => {
-      rightDir = -1;
+      rightDir.current = -1;
     });
     
-    commandTimer = setInterval(() => {
-      if (leftData !== prevLeftData || rightData !== prevRightData) {
+    commandTimer.current = setInterval(() => {
+      if (!ai && (leftData.current !== prevLeftData.current || rightData.current !== prevRightData.current)) {
         let q = '';
-		q += 'left='+leftData;
-		q += '&right='+rightData;
+		q += 'left='+leftData.current;
+		q += '&right='+rightData.current;
         fetch('command/?'+q)
-        .then(response => response.json())
+        .then(isResponseOk)
         .then((data) => {
-          prevLeftData = parseInt(data.left);
-          prevRightData = parseInt(data.right);
-        });
+          prevLeftData.current = parseInt(data.left);
+          prevRightData.current = parseInt(data.right);
+        })
+        .catch((error) => {
+		  //console.log(error.message);
+	    });
       }
     }, 200);
     
   }, []);
+  
+  useEffect(() => {
+    let q = 'enabled=' + (ai ? '1' : '0');
+    q += '&type=motion';
+	fetch('ai/?'+q)
+	.then(isResponseOk)
+	.then((data) => {
+	  
+	})
+	.catch((error) => {
+      console.log(error.message);
+	});
+  }, [ai]);
+  
   return (
     <div className="App">
-      <div id="left" ref={left}></div>
-      <div id="right" ref={right}></div>
+      <div id="menu">
+	    <Form.Check type="switch" id="ai-switch" label="AI" checked={ai} onChange={(evt) => setAi(evt.target.checked)} />
+      </div>
+	  <div id="controls">
+        <div id="left" ref={left}></div>
+        <div id="right" ref={right}></div>
+      </div>
     </div>
   );
 }

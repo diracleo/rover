@@ -4,6 +4,7 @@
 # import the necessary packages
 from pyimagesearch.motion_detection import SingleMotionDetector
 from imutils.video import VideoStream
+from collections import deque
 from flask import Response
 from flask import Flask
 from flask import render_template
@@ -16,6 +17,7 @@ import time
 import cv2
 import serial
 import math
+import json
 
 # initialize the output frame and a lock used to ensure thread-safe
 # exchanges of the output frames (useful for multiple browsers/tabs
@@ -33,84 +35,81 @@ vs = VideoStream(src=0).start()
 time.sleep(2.0)
 
 ser = serial.Serial(
-    port='/dev/ttyACM2',
+    port='/dev/ttyACM0',
     baudrate=9600,
 )
 
 ser.isOpen()
-
-@app.route("/")
-def index():
-	# return the rendered template
-	return render_template("index.html")
-
+	
 def feed(frameCount):
 	# grab global references to the video stream, output frame, and
 	# lock variables
-	global vs, outputFrame, lock
+	global vs, outputFrame, lockf
+
+	greenLower = (6, 130, 130)
+	greenUpper = (51, 255, 255)
+	frame_width = 400
 
 	# loop over frames from the video stream
 	while True:
-		# read the next frame from the video stream, resize it,
-		# convert the frame to grayscale, and blur it
-		frame = vs.read()
-		frame = imutils.resize(frame, width=400)
-
-		# acquire the lock, set the output frame, and release the
-		# lock
-		with lock:
-			outputFrame = frame.copy()
-
-def detect_motion(frameCount):
-	# grab global references to the video stream, output frame, and
-	# lock variables
-	global vs, outputFrame, lock
-
-	# initialize the motion detector and the total number of frames
-	# read thus far
-	md = SingleMotionDetector(accumWeight=0.1)
-	total = 0
-
-	# loop over frames from the video stream
-	while True:
-		# read the next frame from the video stream, resize it,
-		# convert the frame to grayscale, and blur it
-		frame = vs.read()
-		frame = imutils.resize(frame, width=400)
-		gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-		gray = cv2.GaussianBlur(gray, (7, 7), 0)
-
-		# grab the current timestamp and draw it on the frame
-		timestamp = datetime.datetime.now()
-		cv2.putText(frame, timestamp.strftime(
-			"%A %d %B %Y %I:%M:%S%p"), (10, frame.shape[0] - 10),
-			cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
-
-		# if the total number of frames has reached a sufficient
-		# number to construct a reasonable background model, then
-		# continue to process the frame
-		if total > frameCount:
-			# detect motion in the image
-			motion = md.detect(gray)
-
-			# cehck to see if motion was found in the frame
-			if motion is not None:
-				# unpack the tuple and draw the box surrounding the
-				# "motion area" on the output frame
-				(thresh, (minX, minY, maxX, maxY)) = motion
-				cv2.rectangle(frame, (minX, minY), (maxX, maxY),
-					(0, 0, 255), 2)
-		
-		# update the background model and increment the total number
-		# of frames read thus far
-		md.update(gray)
-		total += 1
-
-		# acquire the lock, set the output frame, and release the
-		# lock
-		with lock:
-			outputFrame = frame.copy()
-		
+		f = open('./running.txt', 'r')
+		data = {}
+		try:
+			raw = f.read()
+			data = json.loads(raw)
+		except Exception:
+			data['ai_enabled'] = False
+			data['ai_type'] = None
+		ai_enabled = data.get('ai_enabled', False)
+		if not ai_enabled:
+			frame = vs.read()
+			frame = imutils.resize(frame, width=frame_width)
+			with lock:
+				outputFrame = frame.copy()
+		else:
+			ai_type = data.get('ai_type', None)
+			if ai_type == 'motion':
+				frame = vs.read()
+				frame = imutils.resize(frame, width=frame_width)
+			
+				blurred = cv2.GaussianBlur(frame, (11, 11), 0)
+				hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+				mask = cv2.inRange(hsv, greenLower, greenUpper)
+				mask = cv2.erode(mask, None, iterations=2)
+				mask = cv2.dilate(mask, None, iterations=2)
+				
+				cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+				cnts = imutils.grab_contours(cnts)
+				center = None
+				# only proceed if at least one contour was found
+				if len(cnts) > 0:
+					# find the largest contour in the mask, then use
+					# it to compute the minimum enclosing circle and
+					# centroid
+					c = max(cnts, key=cv2.contourArea)
+					((x, y), radius) = cv2.minEnclosingCircle(c)
+					M = cv2.moments(c)
+					center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+					# only proceed if the radius meets a minimum size
+					if radius > 10 and radius < frame_width / 4:
+						# draw the circle and centroid on the frame,
+						# then update the list of tracked points
+						cv2.circle(frame, (int(x), int(y)), int(radius),
+							(0, 255, 255), 2)
+						if center[0] > frame_width / 2 - 50 and center[0] < frame_width / 2 + 50:
+							power_wheels(200, 200)
+						elif center[0] < frame_width / 2 - 50:
+							power_wheels(-200, 200)
+						elif center[0] > frame_width / 2 + 50:
+							power_wheels(200, -200)
+					else:
+						power_wheels(0, 0)
+				else:
+					power_wheels(0, 0)
+				with lock:
+					outputFrame = frame.copy()
+	
+	
 def generate():
 	# grab global references to the output frame and lock variables
 	global outputFrame, lock
@@ -135,6 +134,15 @@ def generate():
 		yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + 
 			bytearray(encodedImage) + b'\r\n')
 
+def power_wheels(left, right):
+	cmd = str(left) + 'L' + str(right) + 'R'
+	ser.write(cmd.encode())
+	
+@app.route("/")
+def index():
+	# return the rendered template
+	return render_template("index.html")
+	
 @app.route("/video_feed")
 def video_feed():
 	# return the response generated along with the specific media
@@ -149,10 +157,23 @@ def command():
 	right = request.args.get("right")
 	ret = {}
 	ret['left'] = left
-	cmd += str(left) + 'L'
 	ret['right'] = right
-	cmd += str(right) + 'R'
-	ser.write(cmd.encode())
+	power_wheels(left, right)
+	return ret
+	
+@app.route("/ai/")
+def ai():
+	cmd = ''
+	enabled = request.args.get("enabled")
+	ret = {}
+	data = {};
+	data['ai_enabled'] = True if enabled == '1' else False
+	data['ai_type'] = request.args.get("type")
+	f = open('./running.txt', 'w')
+	f.write(json.dumps(data))
+	f.close()
+	ret['ai'] = enabled
+	power_wheels(0, 0);
 	return ret
 
 # check to see if this is the main thread of execution
