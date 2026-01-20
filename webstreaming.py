@@ -30,17 +30,17 @@ app = Flask(__name__, static_folder="./build/static", template_folder="./build")
 
 # initialize the video stream and allow the camera sensor to
 # warmup
-#vs = VideoStream(usePiCamera=1).start()
-vs = VideoStream(src=0).start()
+vs = VideoStream(usePiCamera=True, resolution=(640, 480), framerate=32).start()
+#vs = VideoStream(src=0).start()
 time.sleep(2.0)
-
+"""
 ser = serial.Serial(
-    port='/dev/ttyACM0',
+    port='/dev/serial0',
     baudrate=9600,
 )
 
 ser.isOpen()
-	
+"""
 def feed(frameCount):
 	# grab global references to the video stream, output frame, and
 	# lock variables

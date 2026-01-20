@@ -1,1 +1,1 @@
-{"ai_enabled": true, "ai_type": "motion"}
+{"ai_enabled": false, "ai_type": "motion"}
