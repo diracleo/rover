@@ -15,14 +15,14 @@
   flex:1;
   position:relative;
 }
-.App #controls #left {
+.App #controls #drive {
   position:absolute;
   left:0px;
   top:0px;
   width:50%;
   height:100%;
 }
-.App #controls #right {
+.App #controls #steer {
   position:absolute;
   right:0px;
   top:0px;

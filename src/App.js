@@ -1,118 +1,81 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useRef} from 'react';
 import { isResponseOk } from './utils.js';
-import logo from './logo.svg';
 import './App.css';
 import nipplejs from 'nipplejs';
-//import 'bootstrap/dist/css/bootstrap.min.css';
-import '@forevolve/bootstrap-dark/dist/css/bootstrap-dark.min.css'
-import Button from 'react-bootstrap/Button';
-import Form from 'react-bootstrap/Form';
+import '@forevolve/bootstrap-dark/dist/css/bootstrap-dark.min.css';
 
-const maxForce = 2.5;
-const maxInput = 255;
-const inputPrecision = 51;
-  
-function App() {
-  const left = useRef(null);
-  const right = useRef(null);
-  const leftData = useRef(0);
-  const rightData = useRef(0);
-  const leftDir = useRef(1);
-  const rightDir = useRef(1);
-  const prevLeftData = useRef(0);
-  const prevRightData = useRef(0);
-  const commandTimer = useRef(null);
-  const managerLeft = useRef(null);
-  const managerRight = useRef(null);
-  
-  const [ai, setAi] = useState(false);
-  
-  function convertToInput(value, dir) {
-    value = Math.round(value / maxForce * maxInput);
-    if (value > maxInput) {
-	  value = maxInput;
-	}
-	value *= dir;
-	value = Math.ceil(value / inputPrecision) * inputPrecision;
-	return value;
+const convertNippleData = (data) => {
+  let modifier = 1;
+  if (data.direction.x === 'left' || data.direction.y === 'down') {
+    modifier = -1;
   }
+  return Math.round(data.force * modifier * 100);
+};
+
+function App() {
+  const drive = useRef(null);
+  const steer = useRef(null);
+  const managerDrive = useRef(null);
+  const managerSteer = useRef(null);
+  const driveValue = useRef(0);
+  const steerValue = useRef(0);
+  const driveValuePrev = useRef(0);
+  const steerValuePrev = useRef(0);
+  const commandTimer = useRef(null);
   
   useEffect(() => {
-    const optionsLeft = {
-      zone: left.current,
+    const optionsDrive = {
+      zone: drive.current,
       lockY: true,
       shape: "square",
     };
-    managerLeft.current = nipplejs.create(optionsLeft);
-    const optionsRight = {
-      zone: right.current,
-      lockY: true,
+    managerDrive.current = nipplejs.create(optionsDrive);
+    const optionsSteer = {
+      zone: steer.current,
+      lockX: true,
       shape: "square",
     };
-    managerRight.current = nipplejs.create(optionsRight);
-    
-    managerLeft.current.on('start end', (evt, data) => {
-      leftData.current = 0;
-      setAi(false);
+    managerSteer.current = nipplejs.create(optionsSteer);
+
+    managerDrive.current.on('start end', (evt, data) => {
+      driveValue.current = 0;
     }).on('move', (evt, data) => {
-	  leftData.current = convertToInput(data.force, leftDir.current);
-    }).on('dir:up', (evt, data) => {
-      leftDir.current = 1;
-    }).on('dir:down', (evt, data) => {
-      leftDir.current = -1;
+      if (data.force && data.direction) {
+	      driveValue.current = convertNippleData(data);
+      }
     });
-    
-    managerRight.current.on('start end', (evt, data) => {
-      rightData.current = 0;
-      setAi(false);
+
+    managerSteer.current.on('start end', (evt, data) => {
+      steerValue.current = 0;
     }).on('move', (evt, data) => {
-      rightData.current = convertToInput(data.force, rightDir.current);
-    }).on('dir:up', (evt, data) => {
-      rightDir.current = 1;
-    }).on('dir:down', (evt, data) => {
-      rightDir.current = -1;
+      if (data.force && data.direction) {
+	      steerValue.current = convertNippleData(data);
+      }
     });
-    
+
     commandTimer.current = setInterval(() => {
-      if (!ai && (leftData.current !== prevLeftData.current || rightData.current !== prevRightData.current)) {
+      if (driveValue.current !== driveValuePrev.current || steerValue.current !== steerValuePrev.current) {
         let q = '';
-		q += 'left='+leftData.current;
-		q += '&right='+rightData.current;
+		    q += 'drive='+driveValue.current;
+		    q += '&steer='+steerValue.current;
         fetch('command/?'+q)
         .then(isResponseOk)
         .then((data) => {
-          prevLeftData.current = parseInt(data.left);
-          prevRightData.current = parseInt(data.right);
+          driveValuePrev.current = parseInt(data.drive);
+          steerValuePrev.current = parseInt(data.steer);
         })
         .catch((error) => {
-		  //console.log(error.message);
-	    });
+		      //console.log(error.message);
+	      });
       }
     }, 200);
-    
   }, []);
-  
-  useEffect(() => {
-    let q = 'enabled=' + (ai ? '1' : '0');
-    q += '&type=motion';
-	fetch('ai/?'+q)
-	.then(isResponseOk)
-	.then((data) => {
-	  
-	})
-	.catch((error) => {
-      console.log(error.message);
-	});
-  }, [ai]);
-  
+
   return (
     <div className="App">
-      <div id="menu">
-	    <Form.Check type="switch" id="ai-switch" label="AI" checked={ai} onChange={(evt) => setAi(evt.target.checked)} />
-      </div>
-	  <div id="controls">
-        <div id="left" ref={left}></div>
-        <div id="right" ref={right}></div>
+	    <div id="controls">
+        <div id="drive" ref={drive}></div>
+        <div id="steer" ref={steer}></div>
       </div>
     </div>
   );
